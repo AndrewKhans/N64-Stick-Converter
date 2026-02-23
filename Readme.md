@@ -23,11 +23,12 @@ uint8_t quadrantScalingFactors[4][2] = {
 	{0, 0}, // X, Y scaling factors for grey quadrant
 	{0, 0}, // X, Y scaling factors for green quadrant
 }
+
 uint8_t extraScalingFactors[4] = {
-	0, // Y factor for the north area above the yellow/green quadrants
-	0, // X factor for east
-	0, // Y factor for south
-	0, // X factor for west
+	0, // Y factor for the triangle area to the north
+	0, // X factor for the triangle area to the east
+	0, // Y factor for the triangle area to the south
+	0, // X factor for the triangle area to the west
 }
 ```
 
@@ -47,4 +48,4 @@ Read the current stick X and Y, and select scaling factors like this:
 	- Start with the factors from `quadrantScalingFactors` the orange quadrant
 	- If X is outside the orange quadrant, the X scaling factor is the **east** element of `extraScalingFactors`
 	- If Y is outside the orange quadrant, the Y scaling factor is the **south** element of `extraScalingFactors`
-- etc
+- etc, for the 4 other cases
