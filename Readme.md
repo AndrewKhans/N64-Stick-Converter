@@ -4,44 +4,47 @@
 # Pseudocode
 ## Calibration
 
-Variables used:
+Variables we need to calculate and store:
 ```c
-`uint18_t cardinals[8][2] = {
+uint16_t cardinals[8][2] = {
+	{0, 0}, // X, Y reading for the north cardinal
+	{0, 0}, // X, Y reading for the northeast cardinal
+	{0, 0}, // etc, clockwise
 	{0, 0},
 	{0, 0},
 	{0, 0},
 	{0, 0},
 	{0, 0},
-	{0, 0},
-	{0, 0},
-	{0, 0}
-};`
+}
 
-`uint8_t quadrantScalingFactors[4][2]`
-`uint8_t extraScalingFactors[4] = {
-	Y factor for north
-	X factor for east
-	Y factor for south
-	X factor for west
-
+uint8_t quadrantScalingFactors[4][2] = {
+	{0, 0}, // X, Y scaling factors for yellow quadrant
+	{0, 0}, // X, Y scaling factors for orange quadrant
+	{0, 0}, // X, Y scaling factors for grey quadrant
+	{0, 0}, // X, Y scaling factors for green quadrant
+}
+uint8_t extraScalingFactors[4] = {
+	0, // Y factor for the north area above the yellow/green quadrants
+	0, // X factor for east
+	0, // Y factor for south
+	0, // X factor for west
 }
 ```
 
-1. Wait for the button press. Once it's pressed, save the current stick X, Y to `Cardinals`
-2. Calculate scaling factors
-	1. We need 4 x,y scaling factor pairs, for the yellow/orange/grey/green quadrants
-	2. We need 4 extra x or y scaling factors, for when we're in the purple/blue zones
-		- Note: In these zones, we can keep using the scaling factor from the nearest quadrant, for the smaller of x or y. Ex: When we are in the North purple zone, we still use the yellow quadrant's X scaling factor, but we switch to a different Y one
+1. Wait for the first button press, then save the current stick X, Y to `cardinals[0]`
+2. Fill in `cardinals` iteratively with each button press
+3. Calculate scaling factors
+	1. Calculate each factor of `quadrantScalingFactors` based on the cardinal at the corner of that quadrant
+	2. Calculate each factor of `extraScalingFactors` based on the north, east, south, and west cardinals
 
 ## Applying the Calibration
-+x, +y:
-	- Use X from scalingFactors[0]
-	- if y < y from cardinals[0], use y from scalingFactors[0] else use extraScalingFactors[0]
-+x, -y
-
-## Testing
-- Diff my changes with the original
-- Make mocks for the missing libs
-
-
-## Questions
+Read the current stick X and Y, and select scaling factors like this:
+- Case 1: X is positive, Y is positive:
+	- Start with the factors from `quadrantScalingFactors` the yellow quadrant
+	- If X is outside the yellow quadrant, the X scaling factor is the **east** element of `extraScalingFactors`
+	- If Y is outside the yellow quadrant, the Y scaling factor is the **north** element of `extraScalingFactors`
+- Case 2: X is positive, Y is negative:
+	- Start with the factors from `quadrantScalingFactors` the orange quadrant
+	- If X is outside the orange quadrant, the X scaling factor is the **east** element of `extraScalingFactors`
+	- If Y is outside the orange quadrant, the Y scaling factor is the **south** element of `extraScalingFactors`
+- etc
