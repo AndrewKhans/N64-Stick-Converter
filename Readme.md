@@ -39,7 +39,8 @@ uint8_t extraScalingFactors[4] = {
 	2. Calculate each factor of `extraScalingFactors` based on the north, east, south, and west cardinals
 
 ## Applying the Calibration
-Read the current stick X and Y, and select scaling factors like this:
+1. Read the raw 16 bit stick X and Y
+2. Subtract 16 bit X and Y values from the reading, to give us X and Y coordinates that can be used with the diagram:
 - Case 1: X is positive, Y is positive:
 	- Start with the factors from `quadrantScalingFactors` the yellow quadrant
 	- If X is outside the yellow quadrant, the X scaling factor is the **east** element of `extraScalingFactors`
@@ -49,3 +50,14 @@ Read the current stick X and Y, and select scaling factors like this:
 	- If X is outside the orange quadrant, the X scaling factor is the **east** element of `extraScalingFactors`
 	- If Y is outside the orange quadrant, the Y scaling factor is the **south** element of `extraScalingFactors`
 - etc, for the 4 other cases
+
+
+## Potential Issues
+1. Calculating cardinals in one shot instead of continuous readings that look for a max
+2. Runtime
+3. EEPROM space: ATtiny24A has 128 bytes
+	- `quadrantLimits` is (2\*2)\*4
+		- If needed, we could make these values 8 bit instead of 16 bit. We would get our 16 bit reading, scale down the reading, see if the 8 bit scaled down reading is outside of the 8 bit limit value, and if it is re-scale the original 16 bit reading.
+	- `quadrantScalingFactors` is 2\*4
+
+

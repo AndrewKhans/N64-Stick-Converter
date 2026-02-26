@@ -3,7 +3,7 @@
  *
  * Created: 25.02.2015 17:48:54
  * Original Author: Jakob Schäfer
- * Some Edits by: Andrew K.
+ * Cardinal-Based Scaling Edit: Andrew K.
  *
  * ONLY FOR YOUR OWN PERSONAL USE! COMMERCIAL USE PROHIBITED!
  * NUR FÜR DEN EIGENGEBRAUCH! GEWERBLICHE NUTZUNG VERBOTEN! 
