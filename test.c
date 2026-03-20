@@ -1,6 +1,10 @@
 #include <stdio.h>  // TODO: Remove
 #include <stdint.h> // TODO: Remove
 
+
+// +/- minimum range that will be achieved for each axis in standard range mode
+#define MIN_RANGE_STD 20
+
 typedef struct {
 	uint16_t x;
 	uint16_t y;
@@ -11,39 +15,39 @@ typedef struct {
 	uint8_t y;
 } pair8_t;
 
-static inline int16_t abs16(int16_t v) {
-    return v >= 0 ? v : -v;
-};
-
+// This test data says that neutral is 10,10, and the stickbox has a height and length of 20
 // Mock
-void GetX() {
-
+uint16_t GetX() {
+    static int count = 0;
+	uint16_t x_readings[] = {
+		10, // Neutral x
+		10,
+		15,
+		20,
+		15,
+		10,
+		5,
+		0,
+		5,
+	};
+	return x_readings[count++];
 }
 
 // Mock
-void GetY {
-
-}
-
-
-// TODO: In the main program, don't define this as a function, just paste the contents inside Calibration()
-// TODO: Should we calculate limits as we go instead of saving each in `cardinals`? We might run out of RAM!
-void Calibration() {
-	uint16_t xNeutral16, yNeutral16;
-
-	// Get neutral
-
-
-	// Every other cardinal is the corner of a quadrant
-	quadrantLimits[0] = cardinals[1]; // Top-right corner of yellow quadrant
-	quadrantLimits[1] = cardinals[3]; // Bottom-right corner of orange quadrant
-	quadrantLimits[2] = cardinals[5]; // Bottom-left corner of grey quadrant
-	quadrantLimits[3] = cardinals[7]; // Top-left corner of green quadrant
-
-	// Save calibration to eeprom
-	// Save quadrantLimits
-	// Save quadrantScalingFactors
-	// save extraScalingFactors
+uint16_t GetY() {
+    static int count = 0;
+	uint16_t y_readings[] = {
+		10, // Neutral y
+		20,
+		15,
+		10,
+		5,
+		0,
+		5,
+		10,
+		15,
+	};
+	return y_readings[count++];
 }
 
 /*
@@ -75,83 +79,156 @@ struct {
 	uint8_t west;  // X factor for the triangle area to the west
 } extraScalingFactors;
 
-/*
-	Return the scaling factor pair that should be used to scale down a stick reading to an 8 bit value.
-*/
-pair8_t GetScalingFactor(pair16_t rawStickReading, pair16_t neutral) {
-	int16_t x, y;
-	pair16_t limits;
-	pair8_t sf;
-	pair8_t extraSf;
 
-	// TODO: How can we guarantee that these values fit into a 16 bit signed int?
-	// x and y are our coordinates on the diagram
-	x = (int16_t)rawStickReading.x - (int16_t)neutral.x;
-	y = (int16_t)rawStickReading.y - (int16_t)neutral.y;
-	uint8_t key = ((x > 0) << 1) | (y > 0); // left bit is x, right is y. 1=pos, 0=neg
-	switch (key) {
-	    case 0b11: // x > 0, y > 0: yellow quadrant
-			sf        = quadrantScalingFactors[0];
-			limits    = quadrantLimits[0];
-			extraSf.x = extraScalingFactors.east;
-			extraSf.y = extraScalingFactors.north;
-	        break;
+uint8_t CalculateScalingFactor(uint16_t reading, uint16_t neutral) {
+	uint16_t temp, sf;
 
-	    case 0b10: // x > 0, y <= 0: orange quadrant
-			sf        = quadrantScalingFactors[1];
-			limits    = quadrantLimits[1];
-			extraSf.x = extraScalingFactors.east;
-			extraSf.y = extraScalingFactors.south;
-	        break;
-
-	    case 0b00: // x <= 0, y <= 0: grey quadrant
-			sf        = quadrantScalingFactors[2];
-			limits    = quadrantLimits[2];
-			extraSf.x = extraScalingFactors.west;
-			extraSf.y = extraScalingFactors.south;
-	        break;
-
-	    case 0b01: // x <= 0, y > 0: green quadrant
-			sf        = quadrantScalingFactors[3];
-			limits    = quadrantLimits[3];
-			extraSf.x = extraScalingFactors.west;
-			extraSf.y = extraScalingFactors.north;
-	        break;
+	if (reading > neutral){
+		temp = reading - neutral;
+	} else {
+		temp = neutral - reading;
 	}
 
-	// If we're outside of our quadrant in either dimension, use the 
-	// extra scaling factor instead of the quadrant scaling factor
-	if (abs16(x) > abs16(limits.x)) sf.x = extraSf.x;
-	if (abs16(y) > abs16(limits.y)) sf.y = extraSf.y;
+	printf("reading %u, neutral %u, temp %u\n", reading, neutral, temp);
+
+	// calculate factor (standard mode)
+	sf = ((MIN_RANGE_STD*256)/temp);
+	// if remainder, add one
+	if ( ((MIN_RANGE_STD*256)%temp) > 0  ) sf++;
+
+	printf("sf: %u\n", sf);
+	return (uint8_t)sf;
+}
+
+// TODO: Should we calculate + save limits as we go instead of saving each in `cardinals`? We might run out of RAM!
+// Loop: Press button, point to cardinal
+void Calibration() {
+	pair16_t neutral, reading;
+
+	// // reset firstPowerOn variable in EEPROM
+	// eeprom_update_byte(&firstPowerOn, 0x00);
+	// // store the calibration slider switch's position
+	// eeprom_update_byte(&calibSwitch, (PINB&(1<<PORTB2)) );
+
+	// Get neutral
+	neutral.x = GetX();
+	neutral.y = GetY();
+
+	printf("neutral x: %u y: %u\n", neutral.x, neutral.y);
+
+
+	for (uint8_t i = 0; i < 8; i++) {
+		// Wait for Z button press
+		// while (!(PINA&(1<<PORTA3)));
+
+		reading.x = GetX();
+		reading.y = GetY();
+
+		switch (i) {
+			case 0: // North
+				printf("Calculating north extra scaling factor\n");
+				extraScalingFactors.north = CalculateScalingFactor(reading.y, neutral.y);
+				break;
+			case 2: // East
+				extraScalingFactors.east = CalculateScalingFactor(reading.x, neutral.x);
+				break;
+			case 4: // South
+				extraScalingFactors.south = CalculateScalingFactor(reading.y, neutral.y);
+				break;
+			case 6: // West
+				extraScalingFactors.west = CalculateScalingFactor(reading.x, neutral.x);
+				break;
+			default: // Corners of quadrants
+				quadrantLimits[i/2] = reading;
+				quadrantScalingFactors[i/2].x = CalculateScalingFactor(reading.x, neutral.x);
+				quadrantScalingFactors[i/2].y = CalculateScalingFactor(reading.y, neutral.y);
+				break;
+		}
+		// _delay_ms(500);
+	}
+
+
+	for (uint8_t i = 0; i < 4; i++) {
+		printf("quadrantLimits[%u]: (%u, %u)\n", i, quadrantLimits[i].x,quadrantLimits[i].y);
+	}
+	for (uint8_t i = 0; i < 4; i++) {
+		printf("quadrantScalingFactors[%u]: (%u, %u)\n", i, quadrantScalingFactors[i].x,quadrantScalingFactors[i].y);
+	}
+
+	printf("extraScalingFactors.north: (%u)\n", extraScalingFactors.north);
+	printf("extraScalingFactors.east: (%u)\n", extraScalingFactors.east);
+	printf("extraScalingFactors.south: (%u)\n", extraScalingFactors.south);
+	printf("extraScalingFactors.west: (%u)\n", extraScalingFactors.west);
+
+	// Write it all to eeprom
+		// Save quadrantLimits
+		// Save quadrantScalingFactors
+		// Save extraScalingFactors
+}
+
+uint8_t ScaleDown(uint16_t raw16, uint8_t c){
+	return  (uint8_t) ( (raw16*c) >> 8);
+}
+
+/*
+	Return the scaling factor pair that should be used to scale down a raw stick reading to an 8 bit value.
+*/
+pair8_t GetScalingFactor(pair16_t raw, pair16_t neutral) {
+	pair16_t limits;
+	pair8_t sf;
+
+	// left bit is x, right is y. 1=pos, 0=neg
+	uint8_t key = ((raw.x > neutral.x) << 1) | (raw.y > neutral.y);
+	switch (key) {
+	    case 0b11: // x > 0, y > 0
+			sf     = quadrantScalingFactors[0];
+			limits = quadrantLimits[0];
+			if (raw.x > limits.x) sf.x = extraScalingFactors.east;
+			if (raw.y > limits.y) sf.y = extraScalingFactors.north;
+	        break;
+
+	    case 0b10: // x > 0, y <= 0
+			sf     = quadrantScalingFactors[1];
+			limits = quadrantLimits[1];
+			if (raw.x > limits.x) sf.x = extraScalingFactors.east;
+			if (raw.y < limits.y) sf.y = extraScalingFactors.south;
+	        break;
+
+	    case 0b00: // x <= 0, y <= 0
+			sf     = quadrantScalingFactors[2];
+			limits = quadrantLimits[2];
+			if (raw.x < limits.x) sf.x = extraScalingFactors.west;
+			if (raw.y < limits.y) sf.y = extraScalingFactors.south;
+	        break;
+
+	    case 0b01: // x <= 0, y > 0
+			sf     = quadrantScalingFactors[3];
+			limits = quadrantLimits[3];
+			if (raw.x < limits.x) sf.x = extraScalingFactors.west;
+			if (raw.y > limits.y) sf.y = extraScalingFactors.north;
+	        break;
+	}
 
 	return sf;
 }
 
 int main() {
 
+	printf("Running calibration\n");
+	Calibration();
+
 	pair16_t neutral;
 	neutral.x = 10;
 	neutral.y = 10;
 
-	printf("Filling cardinals with test data, assuming neutral is 10,10, "
-		   "and the stickbox has a max length/height of 20\n");
-	
-	pair16_t cardinals[8];
-	cardinals[0].x = 10, cardinals[0].y = 20;
-	cardinals[1].x = 15, cardinals[1].y = 15;
-	cardinals[2].x = 20, cardinals[2].y = 10;
-	cardinals[3].x = 15, cardinals[3].y = 5;
-	cardinals[4].x = 10, cardinals[4].y = 0;
-	cardinals[5].x = 5,  cardinals[5].y = 5;
-	cardinals[6].x = 0,  cardinals[6].y = 10;
-	cardinals[7].x = 5,  cardinals[7].y = 15;
-	for (int i = 0; i < sizeof(cardinals)/sizeof(cardinals[0]); i++) {
-		printf("cardinals[%u]: (%u, %u)\n", i, cardinals[i].x, cardinals[i].y);
-	}
+	pair16_t reading;
+	reading.x = 15;
+	reading.y = 15;
 
-	printf("Calculating scaling factors from the cardinals");
-	CalculateScalingFactors();
-
-
+	pair8_t sf = GetScalingFactor(reading, neutral);
+	pair8_t scaledDownReading;
+	scaledDownReading.x = ScaleDown(reading.x, sf.x);
+	scaledDownReading.y = ScaleDown(reading.y, sf.y);
+	printf("scaledDownReading for (15,15): (%u, %u)\n", scaledDownReading.x, scaledDownReading.y);
 
 }
