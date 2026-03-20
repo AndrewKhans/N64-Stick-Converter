@@ -301,18 +301,6 @@ void Calibration(void){
 	uint16_t counter = 0;
 	uint16_t xFactor, yFactor;
 
-	uint16_t cardinals[8][2] = {
-		{0, 0},
-		{0, 0},
-		{0, 0},
-		{0, 0},
-		{0, 0},
-		{0, 0},
-		{0, 0},
-		{0, 0}
-	};
-
-
 	// reset firstPowerOn variable in EEPROM
 	eeprom_update_byte(&firstPowerOn, 0x00);
 	// store the calibration slider switch's position
@@ -327,8 +315,6 @@ void Calibration(void){
 	xMax = xNeutral16;
 	yMin = yNeutral16;
 	yMax = yNeutral16;
-
-	// new calibration logic
 
 	// do forever
 	while (1)
@@ -352,7 +338,6 @@ void Calibration(void){
 		{
 			// reset counter
 			counter = 0;
-
 
 			// x axis (standard mode): use the difference between neutral and min or neutral and max, whatever is smaller
 			if ( (xMax - xNeutral16) < (xNeutral16 - xMin) ){
