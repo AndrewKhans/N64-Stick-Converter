@@ -3,7 +3,7 @@
 
 
 // +/- minimum range that will be achieved for each axis in standard range mode
-#define MIN_RANGE_STD 20
+#define MIN_RANGE_STD 101
 
 typedef struct {
 	uint16_t x;
@@ -20,15 +20,15 @@ typedef struct {
 uint16_t GetX() {
     static int count = 0;
 	uint16_t x_readings[] = {
-		10, // Neutral x
-		10,
-		15,
-		20,
-		15,
-		10,
-		5,
-		0,
-		5,
+		512, // Neutral x
+		512, // North
+		630, // NE
+		650, // East
+		630, // SE
+		512, // South
+		400, // SW
+		380, // West
+		400, // NW
 	};
 	return x_readings[count++];
 }
@@ -37,15 +37,15 @@ uint16_t GetX() {
 uint16_t GetY() {
     static int count = 0;
 	uint16_t y_readings[] = {
-		10, // Neutral y
-		20,
-		15,
-		10,
-		5,
-		0,
-		5,
-		10,
-		15,
+		512, // Neutral y
+		650, // North
+		630, // NE
+		512, // East
+		400, // SE
+		380, // South
+		400, // SW
+		512, // West
+		630, // NW
 	};
 	return y_readings[count++];
 }
@@ -85,8 +85,11 @@ uint8_t CalculateScalingFactor(uint16_t reading, uint16_t neutral) {
 
 	if (reading > neutral){
 		temp = reading - neutral;
-	} else {
+	} else if (reading < neutral) {
 		temp = neutral - reading;
+	} else {
+		// This would occur if you didn't move your stick from neutral during calibration
+		temp = 0;
 	}
 
 	printf("reading %u, neutral %u, temp %u\n", reading, neutral, temp);
@@ -181,6 +184,7 @@ pair8_t GetScalingFactor(pair16_t raw, pair16_t neutral) {
 	uint8_t key = ((raw.x > neutral.x) << 1) | (raw.y > neutral.y);
 	switch (key) {
 	    case 0b11: // x > 0, y > 0
+			printf("Case 1\n");
 			sf     = quadrantScalingFactors[0];
 			limits = quadrantLimits[0];
 			if (raw.x > limits.x) sf.x = extraScalingFactors.east;
@@ -188,6 +192,7 @@ pair8_t GetScalingFactor(pair16_t raw, pair16_t neutral) {
 	        break;
 
 	    case 0b10: // x > 0, y <= 0
+			printf("Case 2\n");
 			sf     = quadrantScalingFactors[1];
 			limits = quadrantLimits[1];
 			if (raw.x > limits.x) sf.x = extraScalingFactors.east;
@@ -195,6 +200,7 @@ pair8_t GetScalingFactor(pair16_t raw, pair16_t neutral) {
 	        break;
 
 	    case 0b00: // x <= 0, y <= 0
+			printf("Case 3\n");
 			sf     = quadrantScalingFactors[2];
 			limits = quadrantLimits[2];
 			if (raw.x < limits.x) sf.x = extraScalingFactors.west;
@@ -202,6 +208,7 @@ pair8_t GetScalingFactor(pair16_t raw, pair16_t neutral) {
 	        break;
 
 	    case 0b01: // x <= 0, y > 0
+			printf("Case 4\n");
 			sf     = quadrantScalingFactors[3];
 			limits = quadrantLimits[3];
 			if (raw.x < limits.x) sf.x = extraScalingFactors.west;
@@ -216,19 +223,28 @@ int main() {
 
 	printf("Running calibration\n");
 	Calibration();
+	printf("\n");
 
 	pair16_t neutral;
-	neutral.x = 10;
-	neutral.y = 10;
+	neutral.x = 512;
+	neutral.y = 512;
 
 	pair16_t reading;
-	reading.x = 15;
-	reading.y = 15;
+	reading.x = 580;
+	reading.y = 640;
 
 	pair8_t sf = GetScalingFactor(reading, neutral);
+	printf("Scaling factor: (%u, %u)\n", sf.x, sf.y);
 	pair8_t scaledDownReading;
 	scaledDownReading.x = ScaleDown(reading.x, sf.x);
 	scaledDownReading.y = ScaleDown(reading.y, sf.y);
-	printf("scaledDownReading for (15,15): (%u, %u)\n", scaledDownReading.x, scaledDownReading.y);
 
+	pair8_t scaledDownNeutral;
+	scaledDownNeutral.x = ScaleDown(neutral.x, sf.x);
+	scaledDownNeutral.y = ScaleDown(neutral.y, sf.y);
+	printf("scaledDownReading: (%u, %u)\n", scaledDownReading.x, scaledDownReading.y);
+	int16_t dx = (int16_t)scaledDownReading.x - scaledDownNeutral.x;
+	int16_t dy = (int16_t)scaledDownReading.y - scaledDownNeutral.y;
+
+	printf("delta: (%d, %d)\n", dx, dy);
 }
