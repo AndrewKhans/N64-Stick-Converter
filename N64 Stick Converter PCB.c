@@ -88,6 +88,24 @@ Includes
 /******************************************************************************
 Prototypes
 ******************************************************************************/
+
+typedef struct {
+	uint16_t x;
+	uint16_t y;
+} pair16_t;
+
+typedef struct {
+	uint8_t x;
+	uint8_t y;
+} pair8_t;
+
+typedef struct {
+	uint8_t north; // Y factor for the triangle area to the north
+	uint8_t east;  // X factor for the triangle area to the east
+	uint8_t south; // Y factor for the triangle area to the south
+	uint8_t west;  // X factor for the triangle area to the west
+} extraScalingFactors_t;
+
 // returns a 16 bit ADC value of the potentiometer stick's x axis (0 - 1023)
 uint16_t GetX(void);
 
@@ -95,7 +113,7 @@ uint16_t GetX(void);
 uint16_t GetY(void);
 
 // scales the 16 bit ADC value down to 8 bits: result = raw16 * factor c / 256
-uint8_t ScaleDown(uint16_t raw16, uint8_t c);
+pair8_t ScaleDown(pair16_t raw, pair16_t neutral);
 
 // rotates a byte left by one bit
 uint8_t RotateLeft(uint8_t cData);
@@ -103,11 +121,17 @@ uint8_t RotateLeft(uint8_t cData);
 // rotates a byte left by one bit
 uint8_t RotateRight(uint8_t cData);
 
+// helper function for Calibration
+uint8_t CalculateScalingFactor(uint16_t reading, uint16_t neutral);
+
+// returns scaling factor pair to be used for scaling `raw`
+pair8_t GetScalingFactor(pair16_t raw, pair16_t neutral);
+
 // calculates the c factors and saves them into EEPROM
 void Calibration(void);
 
 /******************************************************************************
-Globals
+EEPROM Variables
 ******************************************************************************/
 // factors for x & y axis in standard range mode
 uint8_t EEMEM cx_std = 0;
@@ -123,6 +147,38 @@ uint8_t	EEMEM firstPowerOn = 1;
 // stores the position of the calibration slider switch
 uint8_t EEMEM calibSwitch;
 
+pair16_t EEMEM eeprom_quadrantLimits[4];
+pair8_t  EEMEM eeprom_quadrantScalingFactors[4];
+extraScalingFactors_t EEMEM eeprom_extraScalingFactors;
+
+/******************************************************************************
+Global Variables
+******************************************************************************/
+
+/*
+	Stores the cardinal reading that defines the limit of each quadrant, in clockwise order
+	- quadrantLimits[0]: Top-right corner of yellow quadrant
+	- quadrantLimits[1]: Bottom-right corner of orange quadrant
+	- quadrantLimits[2]: Bottom-left corner of grey quadrant
+	- quadrantLimits[3]: Top-left corner of green quadrant
+*/
+pair16_t quadrantLimits[4];
+
+/*
+	Stores the X and Y scaling factors to be used when stick reading is in each quadrant
+	- quadrantScalingFactors[0]: factors for yellow quadrant
+	- quadrantScalingFactors[1]: factors for orange quadrant
+	- quadrantScalingFactors[2]: factors for grey quadrant
+	- quadrantScalingFactors[3]: factors for green quadrant
+*/
+pair8_t quadrantScalingFactors[4];
+
+/*
+	Stores the scaling factor to be used when an X or Y coordinate is outside of our quadrants,
+	in the blue/purple triangle area
+*/
+extraScalingFactors_t extraScalingFactors;
+
 /******************************************************************************
 Fuses
 ******************************************************************************/
@@ -133,13 +189,12 @@ __fuse_t __fuse __attribute__((section (".fuse"))) = {	.low		= 0x42,
 int main(void)
 {
 	int16_t xSteps, ySteps;
-	uint16_t x, y, xOld, yOld;
-	uint8_t xNeutral8, yNeutral8;
 	uint8_t xWheel = 0b11001100;
 	uint8_t yWheel = 0b00110011;
-	uint16_t xNeutral16, yNeutral16;
-	uint8_t xFactor, yFactor, maxRange;
+	uint8_t maxRange;
 
+	pair16_t neutral16, raw;
+	pair8_t neutral8, old, pos;
 
 	// set up the ports immediately
 	DDRA = (1<<DDA6)|(1<<DDA7);
@@ -159,68 +214,73 @@ int main(void)
 	ADCSRA = (1<<ADPS0)|(1<<ADPS1);			// prescaler = 8 ==> f_ADC = 1 MHz/8 = 125 kHz
 	ADCSRA |= (1<<ADEN);					// enable ADC
 
-
 	// extended range mode if ext. range mode button is pushed
 	if ( !(PINA&(1<<PORTA5)) ){
-		xFactor = eeprom_read_byte(&cx_xtd);
-		yFactor = eeprom_read_byte(&cy_xtd);
 		maxRange = MAX_RANGE_XTD;
 	}
 	// standard range mode otherwise
 	else{
-		xFactor = eeprom_read_byte(&cx_std);
-		yFactor = eeprom_read_byte(&cy_std);
 		maxRange = MAX_RANGE_STD;
 	}
-
-	// first AD conversion; initialize analog circuitry
-	xNeutral16 = GetX();
-
-	// get x axis neutral position
-	xNeutral16 = GetX();
-	xNeutral8 = ScaleDown(xNeutral16, xFactor);
-	xOld = xNeutral8;
-
-	// get y axis neutral position
-	yNeutral16 = GetY();
-	yNeutral8 = ScaleDown(yNeutral16, yFactor);
-	yOld = yNeutral8;
 
 	// execute calibration if:
 	// a) microcontroller is powered on for the first time or
 	// b) the calibration switch's position has been changed or
 	// c) both calibration button's have been pushed
-	if (	(eeprom_read_byte(&firstPowerOn)) ||
-			((PINB&(1<<PORTB2)) != eeprom_read_byte(&calibSwitch)) ||
-			!(PINA&((1<<PORTA2)|(1<<PORTA3)))	)	Calibration();
+	if ( (eeprom_read_byte(&firstPowerOn)) ||
+		 ((PINB&(1<<PORTB2)) != eeprom_read_byte(&calibSwitch)) ||
+		 !(PINA&((1<<PORTA2)|(1<<PORTA3))) ) {
+		// The calibration remains in memory after Calibration(), no need for eeprom read
+		Calibration();
+	} else {
+		// Load calibration
+		eeprom_read_block(quadrantLimits,
+						  eeprom_quadrantLimits,
+						  sizeof(quadrantLimits));
 
+		eeprom_read_block(quadrantScalingFactors,
+						  eeprom_quadrantScalingFactors,
+						  sizeof(quadrantScalingFactors));
 
+		eeprom_read_block(&extraScalingFactors,
+						  &eeprom_extraScalingFactors,
+						  sizeof(extraScalingFactors));
+	}
+
+	// first AD conversion; initialize analog circuitry
+	neutral16.x = GetX();
+
+	// get neutral position
+	neutral16.x = GetX();
+	neutral16.y = GetY();
+
+	// scale down neutral reading. it's fine to use the neutral reading to
+	// pick the scaling factors, as they will all yield a similar result
+	neutral8 = ScaleDown(neutral16, neutral16);
+
+	old = neutral8;
 
     while(1)
     {
 		// get x axis position
-		x = GetX();
+		raw.x = GetX();
+		raw.y = GetY();
 		// scale down
-		x = ScaleDown(x, xFactor);
-		// limit position to  +/- maxRange
-		if ( (x>xNeutral8) && ((x-xNeutral8) > maxRange) ) x = xNeutral8 + maxRange;
-		if ( (x<xNeutral8) && ((xNeutral8-x) > maxRange) ) x = xNeutral8 - maxRange;
+		pos = ScaleDown(raw, neutral16);
 
-		// get y axis position
-		y = GetY();
-		// scale down
-		y = ScaleDown(y, yFactor);
-		// limit position to  +/- maxRange
-		if ( (y>yNeutral8) && ((y-yNeutral8) > maxRange) ) y = yNeutral8 + maxRange;
-		if ( (y<yNeutral8) && ((yNeutral8-y) > maxRange) ) y = yNeutral8 - maxRange;
+		// limit position to  +/- maxRange (x)
+		if ( (pos.x>neutral8.x) && ((pos.x-neutral8.x) > maxRange) ) pos.x = neutral8.x + maxRange;
+		if ( (pos.x<neutral8.x) && ((neutral8.x-pos.x) > maxRange) ) pos.x = neutral8.x - maxRange;
+		// limit position to  +/- maxRange (y)
+		if ( (pos.y>neutral8.y) && ((pos.y-neutral8.y) > maxRange) ) pos.y = neutral8.y + maxRange;
+		if ( (pos.y<neutral8.y) && ((neutral8.y-pos.y) > maxRange) ) pos.y = neutral8.y - maxRange;
 
 		// calculate the amount of steps (= increments or decrements) for both axes
-		xSteps =  (int16_t) x - xOld;
-		ySteps =  (int16_t) y - yOld;
+		xSteps =  (int16_t) pos.x - old.x;
+		ySteps =  (int16_t) pos.y - old.y;
 
 		// store current stick position for the next cycle
-		xOld = x;
-		yOld = y;
+		old = pos;
 
 		// while there are still steps left...
 		while ( (xSteps!=0) || (ySteps!=0) ){
@@ -293,107 +353,129 @@ uint8_t RotateRight (uint8_t cData){
 	return result;
 }
 
-void Calibration(void){
+uint8_t CalculateScalingFactor(uint16_t reading, uint16_t neutral) {
+	uint16_t temp, sf;
 
-	uint16_t temp;
-	uint16_t xNeutral16, yNeutral16;
-	uint16_t xMin, xMax, yMin, yMax;
-	uint16_t counter = 0;
-	uint16_t xFactor, yFactor;
+	if (reading > neutral){
+		temp = reading - neutral;
+	} else if (reading < neutral) {
+		temp = neutral - reading;
+	} else {
+		// this would occur if you didn't move your stick from neutral during calibration
+		temp = 1;
+	}
+
+	// calculate factor (standard mode)
+	sf = ((MIN_RANGE_STD*256)/temp);
+	// if remainder, add one
+	if ( ((MIN_RANGE_STD*256)%temp) > 0  ) sf++;
+
+	return (uint8_t)sf;
+}
+
+void Calibration(void){
+	pair16_t neutral, reading;
 
 	// reset firstPowerOn variable in EEPROM
 	eeprom_update_byte(&firstPowerOn, 0x00);
 	// store the calibration slider switch's position
 	eeprom_update_byte(&calibSwitch, (PINB&(1<<PORTB2)) );
 
-	// get stick's neutral position
-	xNeutral16 = GetX();
-	yNeutral16 = GetY();
+	// Get neutral
+	neutral.x = GetX();
+	neutral.y = GetY();
 
-	// reset both axes' min and max values
-	xMin = xNeutral16;
-	xMax = xNeutral16;
-	yMin = yNeutral16;
-	yMax = yNeutral16;
+	for (uint8_t i = 0; i < 8; i++) {
+		_delay_ms(50); // debounce previous press
+		// wait for Z button release
+		while (!(PINA&(1<<PORTA3)));
+		_delay_ms(50); // debounce
+		// wait for Z button press
+		while ((PINA&(1<<PORTA3)));
 
-	// do forever
-	while (1)
-	{
+		reading.x = GetX();
+		reading.y = GetY();
 
-		// check the x axis for new min and max values
-		temp = GetX();
-		if (temp > xMax) xMax = temp;
-		if (temp < xMin) xMin = temp;
-
-		// check the y axis for new min and max values
-		temp = GetY();
-		if (temp > yMax) yMax = temp;
-		if (temp < yMin) yMin = temp;
-
-		// increase counter
-		counter++;
-
-		// periodically calculate and store the c factors
-		if (counter>4000)
-		{
-			// reset counter
-			counter = 0;
-
-			// x axis (standard mode): use the difference between neutral and min or neutral and max, whatever is smaller
-			if ( (xMax - xNeutral16) < (xNeutral16 - xMin) ){
-				temp = xMax - xNeutral16;
-			}
-			else{
-				temp = xNeutral16 - xMin;
-			}
-			// calculate x axis factor (standard mode)
-			xFactor = ((MIN_RANGE_STD*256)/temp);
-			// if remainder, add one
-			if ( ((MIN_RANGE_STD*256)%temp) > 0  ) xFactor++;
-			// store the c factor in EEPROM
-			eeprom_update_byte(&cx_std, (uint8_t) xFactor);
-
-			// y axis (standard mode): use the difference between neutral and min or neutral and max, whatever is smaller
-			if ( (yMax - yNeutral16) < (yNeutral16 - yMin) )
-				temp = yMax - yNeutral16;
-			else
-				temp = yNeutral16 - yMin;
-			// calculate y axis factor (standard mode)
-			yFactor = ((MIN_RANGE_STD*256)/temp);
-			// if remainder, add one
-			if ( ((MIN_RANGE_STD*256)%temp) > 0  ) yFactor++;
-			// store the c factor in EEPROM
-			eeprom_update_byte(&cy_std, (uint8_t) yFactor);
-
-
-			// x axis (extended range mode): use the difference between neutral and min or neutral and max, whatever is smaller
-			if ( (xMax - xNeutral16) < (xNeutral16 - xMin) )
-				temp = xMax - xNeutral16;
-			else
-				temp = xNeutral16 - xMin;
-			// calculate x axis factor (extended range mode)
-			xFactor = ((MIN_RANGE_XTD*256)/temp);
-			// if remainder, add one
-			if ( ((MIN_RANGE_XTD*256)%temp) > 0  ) xFactor++;
-			// store the c factor in EEPROM
-			eeprom_update_byte(&cx_xtd, (uint8_t) xFactor);
-
-			// y axis (extended range mode): use the difference between neutral and min or neutral and max, whatever is smaller
-			if ( (yMax - yNeutral16) < (yNeutral16 - yMin) )
-				temp = yMax - yNeutral16;
-			else
-				temp = yNeutral16 - yMin;
-			// calculate y axis factor (extended range mode)
-			yFactor = ((MIN_RANGE_XTD*256)/temp);
-			// if remainder, add one
-			if ( ((MIN_RANGE_XTD*256)%temp) > 0  ) yFactor++;
-			// store the c factor in EEPROM
-			eeprom_update_byte(&cy_xtd, (uint8_t) yFactor);
+		switch (i) {
+			case 0: // North
+				extraScalingFactors.north = CalculateScalingFactor(reading.y, neutral.y);
+				break;
+			case 2: // East
+				extraScalingFactors.east = CalculateScalingFactor(reading.x, neutral.x);
+				break;
+			case 4: // South
+				extraScalingFactors.south = CalculateScalingFactor(reading.y, neutral.y);
+				break;
+			case 6: // West
+				extraScalingFactors.west = CalculateScalingFactor(reading.x, neutral.x);
+				break;
+			default: // Corners of quadrants
+				quadrantLimits[i/2] = reading;
+				quadrantScalingFactors[i/2].x = CalculateScalingFactor(reading.x, neutral.x);
+				quadrantScalingFactors[i/2].y = CalculateScalingFactor(reading.y, neutral.y);
+				break;
 		}
 	}
 
+	// write it all to eeprom
+	eeprom_update_block(quadrantLimits,
+						eeprom_quadrantLimits,
+						sizeof(quadrantLimits));
+
+	eeprom_update_block(quadrantScalingFactors,
+						eeprom_quadrantScalingFactors,
+						sizeof(quadrantScalingFactors));
+
+	eeprom_update_block(&extraScalingFactors,
+						&eeprom_extraScalingFactors,
+						sizeof(extraScalingFactors));
 }
 
-uint8_t ScaleDown(uint16_t raw16, uint8_t c){
-	return  (uint8_t) ( (raw16*c) >> 8);
+pair8_t GetScalingFactor(pair16_t raw, pair16_t neutral) {
+	pair16_t limits;
+	pair8_t sf;
+
+	// left bit is x, right is y. 1=pos, 0=neg
+	uint8_t key = ((raw.x > neutral.x) << 1) | (raw.y > neutral.y);
+	switch (key) {
+	    case 0b11: // x > 0, y > 0
+			sf     = quadrantScalingFactors[0];
+			limits = quadrantLimits[0];
+			if (raw.x > limits.x) sf.x = extraScalingFactors.east;
+			if (raw.y > limits.y) sf.y = extraScalingFactors.north;
+	        break;
+
+	    case 0b10: // x > 0, y <= 0
+			sf     = quadrantScalingFactors[1];
+			limits = quadrantLimits[1];
+			if (raw.x > limits.x) sf.x = extraScalingFactors.east;
+			if (raw.y < limits.y) sf.y = extraScalingFactors.south;
+	        break;
+
+	    case 0b00: // x <= 0, y <= 0
+			sf     = quadrantScalingFactors[2];
+			limits = quadrantLimits[2];
+			if (raw.x < limits.x) sf.x = extraScalingFactors.west;
+			if (raw.y < limits.y) sf.y = extraScalingFactors.south;
+	        break;
+
+	    case 0b01: // x <= 0, y > 0
+			sf     = quadrantScalingFactors[3];
+			limits = quadrantLimits[3];
+			if (raw.x < limits.x) sf.x = extraScalingFactors.west;
+			if (raw.y > limits.y) sf.y = extraScalingFactors.north;
+	        break;
+	}
+
+	return sf;
+}
+
+pair8_t ScaleDown(pair16_t raw, pair16_t neutral){
+	pair8_t sf = GetScalingFactor(raw, neutral);
+
+	pair8_t ret;
+	ret.x = (uint8_t) ((raw.x*sf.x) >> 8);
+	ret.y = (uint8_t) ((raw.y*sf.y) >> 8);
+
+	return ret;
 }

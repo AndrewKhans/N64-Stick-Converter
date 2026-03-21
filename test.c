@@ -1,9 +1,9 @@
-#include <stdio.h>  // TODO: Remove
-#include <stdint.h> // TODO: Remove
-
+#include <stdio.h>
+#include <stdint.h>
 
 // +/- minimum range that will be achieved for each axis in standard range mode
 #define MIN_RANGE_STD 101
+
 
 typedef struct {
 	uint16_t x;
@@ -15,7 +15,35 @@ typedef struct {
 	uint8_t y;
 } pair8_t;
 
-// This test data says that neutral is 10,10, and the stickbox has a height and length of 20
+/*
+	Stores the cardinal reading that defines the limit of each quadrant, in clockwise order
+	- quadrantLimits[0]: Top-right corner of yellow quadrant
+	- quadrantLimits[1]: Bottom-right corner of orange quadrant
+	- quadrantLimits[2]: Bottom-left corner of grey quadrant
+	- quadrantLimits[3]: Top-left corner of green quadrant
+*/
+pair16_t quadrantLimits[4];
+
+/*
+	Stores the X and Y scaling factors to be used when stick reading is in each quadrant
+	- quadrantScalingFactors[0]: factors for yellow quadrant
+	- quadrantScalingFactors[1]: factors for orange quadrant
+	- quadrantScalingFactors[2]: factors for grey quadrant
+	- quadrantScalingFactors[3]: factors for green quadrant
+*/
+pair8_t quadrantScalingFactors[4];
+
+/*
+	Stores the scaling factor to be used when an X or Y coordinate is outside of our quadrants,
+	in the blue/purple triangle area
+*/
+struct {
+	uint8_t north; // Y factor for the triangle area to the north
+	uint8_t east;  // X factor for the triangle area to the east
+	uint8_t south; // Y factor for the triangle area to the south
+	uint8_t west;  // X factor for the triangle area to the west
+} extraScalingFactors;
+
 // Mock
 uint16_t GetX() {
     static int count = 0;
@@ -50,36 +78,6 @@ uint16_t GetY() {
 	return y_readings[count++];
 }
 
-/*
-	Stores the cardinal reading that defines the limit of each quadrant, in clockwise order
-	- quadrantLimits[0]: Top-right corner of yellow quadrant
-	- quadrantLimits[1]: Bottom-right corner of orange quadrant
-	- quadrantLimits[2]: Bottom-left corner of grey quadrant
-	- quadrantLimits[3]: Top-left corner of green quadrant
-*/
-pair16_t quadrantLimits[4];
-
-/*
-	Stores the X and Y scaling factors to be used when stick reading is in each quadrant
-	- quadrantScalingFactors[0]: factors for yellow quadrant
-	- quadrantScalingFactors[1]: factors for orange quadrant
-	- quadrantScalingFactors[2]: factors for grey quadrant
-	- quadrantScalingFactors[3]: factors for green quadrant
-*/
-pair8_t quadrantScalingFactors[4];
-
-/*
-	Stores the scaling factor to be used when an X or Y coordinate is outside of our quadrants,
-	in the blue/purple triangle area
-*/
-struct {
-	uint8_t north; // Y factor for the triangle area to the north
-	uint8_t east;  // X factor for the triangle area to the east
-	uint8_t south; // Y factor for the triangle area to the south
-	uint8_t west;  // X factor for the triangle area to the west
-} extraScalingFactors;
-
-
 uint8_t CalculateScalingFactor(uint16_t reading, uint16_t neutral) {
 	uint16_t temp, sf;
 
@@ -88,41 +86,38 @@ uint8_t CalculateScalingFactor(uint16_t reading, uint16_t neutral) {
 	} else if (reading < neutral) {
 		temp = neutral - reading;
 	} else {
-		// This would occur if you didn't move your stick from neutral during calibration
+		// this would occur if you didn't move your stick from neutral during calibration
 		temp = 0;
 	}
-
-	printf("reading %u, neutral %u, temp %u\n", reading, neutral, temp);
 
 	// calculate factor (standard mode)
 	sf = ((MIN_RANGE_STD*256)/temp);
 	// if remainder, add one
 	if ( ((MIN_RANGE_STD*256)%temp) > 0  ) sf++;
 
-	printf("sf: %u\n", sf);
 	return (uint8_t)sf;
 }
 
-// TODO: Should we calculate + save limits as we go instead of saving each in `cardinals`? We might run out of RAM!
 // Loop: Press button, point to cardinal
 void Calibration() {
 	pair16_t neutral, reading;
 
-	// // reset firstPowerOn variable in EEPROM
-	// eeprom_update_byte(&firstPowerOn, 0x00);
-	// // store the calibration slider switch's position
-	// eeprom_update_byte(&calibSwitch, (PINB&(1<<PORTB2)) );
+	// reset firstPowerOn variable in EEPROM
+	eeprom_update_byte(&firstPowerOn, 0x00);
+	// store the calibration slider switch's position
+	eeprom_update_byte(&calibSwitch, (PINB&(1<<PORTB2)) );
 
 	// Get neutral
 	neutral.x = GetX();
 	neutral.y = GetY();
 
-	printf("neutral x: %u y: %u\n", neutral.x, neutral.y);
-
-
 	for (uint8_t i = 0; i < 8; i++) {
+		_delay_ms(50); // Debounce previous press
+		// Wait for Z button release
+		while (!(PINA&(1<<PORTA3)));
+		_delay_ms(50); // Debounce
 		// Wait for Z button press
-		// while (!(PINA&(1<<PORTA3)));
+		while ((PINA&(1<<PORTA3)));
 
 		reading.x = GetX();
 		reading.y = GetY();
@@ -147,30 +142,30 @@ void Calibration() {
 				quadrantScalingFactors[i/2].y = CalculateScalingFactor(reading.y, neutral.y);
 				break;
 		}
-		// _delay_ms(500);
 	}
-
-
-	for (uint8_t i = 0; i < 4; i++) {
-		printf("quadrantLimits[%u]: (%u, %u)\n", i, quadrantLimits[i].x,quadrantLimits[i].y);
-	}
-	for (uint8_t i = 0; i < 4; i++) {
-		printf("quadrantScalingFactors[%u]: (%u, %u)\n", i, quadrantScalingFactors[i].x,quadrantScalingFactors[i].y);
-	}
-
-	printf("extraScalingFactors.north: (%u)\n", extraScalingFactors.north);
-	printf("extraScalingFactors.east: (%u)\n", extraScalingFactors.east);
-	printf("extraScalingFactors.south: (%u)\n", extraScalingFactors.south);
-	printf("extraScalingFactors.west: (%u)\n", extraScalingFactors.west);
 
 	// Write it all to eeprom
-		// Save quadrantLimits
-		// Save quadrantScalingFactors
-		// Save extraScalingFactors
+	eeprom_update_block(quadrantLimits,
+						eeprom_quadrantLimits,
+						sizeof(quadrantLimits));
+
+	eeprom_update_block(quadrantScalingFactors,
+						eeprom_quadrantScalingFactors,
+						sizeof(quadrantScalingFactors));
+
+	eeprom_update_block(&extraScalingFactors,
+						&eeprom_extraScalingFactors,
+						sizeof(extraScalingFactors));
 }
 
-uint8_t ScaleDown(uint16_t raw16, uint8_t c){
-	return  (uint8_t) ( (raw16*c) >> 8);
+pair8_t ScaleDown(pair16_t raw, pair16_t neutral){
+	pair16_t sf = GetScalingFactor(raw, neutral);
+
+	pair8_t ret;
+	ret.x = (uint8_t) ((raw.x*sf.x) >> 8);
+	ret.y = (uint8_t) ((raw.y*sf.y) >> 8);
+
+	return ret;
 }
 
 /*
@@ -223,6 +218,16 @@ int main() {
 
 	printf("Running calibration\n");
 	Calibration();
+
+	for (uint8_t i = 0; i < 4; i++)
+		printf("quadrantLimits[%u]: (%u, %u)\n", i, quadrantLimits[i].x,quadrantLimits[i].y);
+	for (uint8_t i = 0; i < 4; i++)
+		printf("quadrantScalingFactors[%u]: (%u, %u)\n", i, quadrantScalingFactors[i].x,quadrantScalingFactors[i].y);
+	printf("extraScalingFactors.north: (%u)\n", extraScalingFactors.north);
+	printf("extraScalingFactors.east: (%u)\n", extraScalingFactors.east);
+	printf("extraScalingFactors.south: (%u)\n", extraScalingFactors.south);
+	printf("extraScalingFactors.west: (%u)\n", extraScalingFactors.west);
+
 	printf("\n");
 
 	pair16_t neutral;
