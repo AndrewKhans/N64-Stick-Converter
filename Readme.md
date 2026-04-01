@@ -5,3 +5,12 @@ Point your stick to the North gate, then press Z. Point to the Northeast gate, t
 1. Calculating cardinals in one shot instead of continuous readings that look for a max
 2. Runtime, the N64 may be expecting controller updates within a specific timeframe
 3. EEPROM space: ATtiny24A has 128 bytes
+
+# Calibratiom
+1. Pizza (affine) transform
+2. Cardinal snapping: Snap to corner when within some range of corner, using dist2d
+
+# Things to try next
+1. Snapback filtering
+2. Can we spin the stick to get cardinals? Easy for North/South/East/West, hard for diagonals
+3. Artificial deadzone
