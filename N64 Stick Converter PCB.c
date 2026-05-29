@@ -84,20 +84,11 @@ Includes
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/eeprom.h>
+#include "math.h"
 
 /******************************************************************************
 Prototypes
 ******************************************************************************/
-
-typedef struct {
-	uint16_t x;
-	uint16_t y;
-} pair16_t;
-
-typedef struct {
-	uint8_t x;
-	uint8_t y;
-} pair8_t;
 
 typedef struct {
 	uint8_t north; // Y factor for the triangle area to the north

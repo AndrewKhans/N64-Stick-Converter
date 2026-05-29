@@ -4,7 +4,8 @@ Point your stick to the North gate, then press Z. Point to the Northeast gate, t
 # Potential Issues
 1. Calculating cardinals in one shot instead of continuous readings that look for a max
 2. Runtime, the N64 may be expecting controller updates within a specific timeframe
-3. EEPROM space: ATtiny24A has 128 bytes
+3. EEPROM space: ATtiny24A has 128 bytes. Possible optimizations:
+    - Have matrix functions take in a matrix pointer to perform operations in-place
 
 # Affine Version
 # Planned features
