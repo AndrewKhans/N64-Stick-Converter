@@ -14,10 +14,10 @@ typedef struct AffineMat {
     float a, b, tx, c, d, ty;
 } AffineMat;
 
-// typedef struct {
-// 	float x;
-// 	float y;
-// } fpair_t;
+typedef struct {
+	float x;
+	float y;
+} fpair_t;
 
 typedef struct {
 	uint16_t x;

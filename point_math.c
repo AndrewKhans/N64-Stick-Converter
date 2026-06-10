@@ -5,7 +5,7 @@
     Get an affine matrix that maps the unit triangle to the triangle made
     from p1, p2, and p3, where p1 is treated as the origin
 */
-AffineMat getAffineMat(pair16_t p1, pair16_t p2, pair16_t p3) {
+AffineMat getAffineMat(fpair_t p1, fpair_t p2, fpair_t p3) {
     AffineMat m;
 
     m.a = (float)p2.x - (float)p1.x;
@@ -19,6 +19,7 @@ AffineMat getAffineMat(pair16_t p1, pair16_t p2, pair16_t p3) {
 }
 
 void matInvert(AffineMat *m) {
+    // Todo: Handle divide by zero
     float det = (m->a*m->d) - (m->b*m->c);
     float tmp;
 
@@ -42,13 +43,13 @@ AffineMat matMultiply(AffineMat m1, AffineMat m2) {
     p.tx = m1.a*m2.tx + m1.b*m2.ty + m1.tx;
     p.c  = m1.c*m2.a  + m1.d*m2.c;
     p.d  = m1.c*m2.b  + m1.d*m2.d;
-    p.tx = m1.c*m2.tx + m1.d*m2.ty + m1.ty;
+    p.ty = m1.c*m2.tx + m1.d*m2.ty + m1.ty;
 
     return p;
 }
 
-pair8_t matPointMultiply(AffineMat m, pair16_t p) {
-    pair8_t ret;
+fpair_t matPointMultiply(AffineMat m, fpair_t p) {
+    fpair_t ret;
 
     ret.x = m.a*p.x + m.b*p.y + m.tx;
     ret.y = m.c*p.x + m.d*p.y + m.ty;
@@ -62,20 +63,54 @@ void printMat(AffineMat m) {
     printf("%.2f %.2f %.2f\n\n", 0.0f, 0.0f, 1.0f);
 }
 
+void transformCsv(const char *inputPath, const char *outputPath, AffineMat transform) {
+    FILE *in = fopen(inputPath, "r");
+    if (!in) {
+        printf("Failed to open %s\n", inputPath);
+        return;
+    }
+
+    FILE *out = fopen(outputPath, "w");
+    if (!out) {
+        printf("Failed to open %s\n", outputPath);
+        fclose(in);
+        return;
+    }
+
+    float x, y;
+    while (fscanf(in, "%f,%f", &x, &y) == 2) {
+        fpair_t p = {x, y};
+        fpair_t result = matPointMultiply(transform, p);
+        fprintf(out, "%.6f,%.6f\n", result.x, result.y);
+    }
+
+    fclose(in);
+    fclose(out);
+}
+
 int main() {
     printf("Beginning point_math tests\n");
 
-    // AffineMat unitMatrix = getAffineMat((pair16_t){0,0}, (pair16_t){1,0}, (pair16_t){0,1});
-    // matInvert(unitMatrix);
-    // printMat(unitMatrix);
+    AffineMat sourceMat = getAffineMat((fpair_t){0,0}, (fpair_t){0.391,0.391}, (fpair_t){0,0.9});
+    matInvert(&sourceMat);
+    AffineMat destMat = getAffineMat((fpair_t){0,0}, (fpair_t){0.5,0.5}, (fpair_t){0,1});
 
-    // AffineMat m1 = {2, 9, 3, 4, 5, 8};
-    // printMat(m1);
-    // matInvert(&m1);
-    // printMat(m1);
+    AffineMat transformMat = matMultiply(destMat, sourceMat);
 
-    AffineMat m2 = {254, 232, 389, 413, 574, 193};
-    printMat(m2);
-    matInvert(&m2);
-    printMat(m2);
+    printf("Transform matrix:\n");
+    printMat(transformMat);
+
+    printf("p1 -> ");
+    fpair_t result = matPointMultiply(transformMat, (fpair_t){0.0f, 0.0f});
+    printf("%.3f %.3f\n", result.x, result.y);
+
+    printf("p2 -> ");
+    result = matPointMultiply(transformMat, (fpair_t){0.391f, 0.391f});
+    printf("%.3f %.3f\n", result.x, result.y);
+
+    printf("p3 -> ");
+    result = matPointMultiply(transformMat, (fpair_t){0.0f, 0.9f});
+    printf("%.3f %.3f\n", result.x, result.y);
+
+    transformCsv("real.csv", "out.csv", transformMat);
 }

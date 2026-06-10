@@ -124,6 +124,9 @@ void Calibration(void);
 /******************************************************************************
 EEPROM Variables
 ******************************************************************************/
+
+#define gate_1
+
 // factors for x & y axis in standard range mode
 uint8_t EEMEM cx_std = 0;
 uint8_t EEMEM cy_std = 0;

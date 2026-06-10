@@ -1,3 +1,8 @@
+export ANTHROPIC_AUTH_TOKEN=ollama
+export ANTHROPIC_API_KEY=""
+export ANTHROPIC_BASE_URL=http://desktop-k054srv:11434
+
+
 # Calibration
 Point your stick to the North gate, then press Z. Point to the Northeast gate, then press Z. Continue clockwise for all 8 gates, then you're ready to game
 
@@ -8,14 +13,21 @@ Point your stick to the North gate, then press Z. Point to the Northeast gate, t
     - Have matrix functions take in a matrix pointer to perform operations in-place
 
 # Affine Version
-# Planned features
+## Planned features
 1. Pizza (affine) transform
 2. Cardinal snapping: Snap to corner when within some range of corner, using dist2d
+3. Manually have the user define each of the cardinals in the ideal triangle for the transforms
 
-# Potential features
+## Potential features
 1. Snapback filtering
 2. Spin the stick to get cardinals. Easy for North/South/East/West, hard for diagonals
+    - Maybe it is finding the largest vector that isn't north?
 3. Artificial deadzone
+
+## Questions
+1. Can we use it to scale 16 bit number to 8 bit?
+2. How to get the corners of the real triangle?
+    - Corner by corner calibration
 
 # Scaling Factor Version
 ## Issues
