@@ -20,8 +20,9 @@ AffineMat getAffineMat(fpair_t p1, fpair_t p2, fpair_t p3) {
 
 void matInvert(AffineMat *m) {
     // Todo: Handle divide by zero
-    float det = (m->a*m->d) - (m->b*m->c);
     float tmp;
+    float det = (m->a*m->d) - (m->b*m->c);
+    if (det == 0) det = 0.00001;
 
     tmp = m->tx;
     m->tx = (m->b*m->ty - m->d*m->tx)/det;
@@ -57,60 +58,33 @@ fpair_t matPointMultiply(AffineMat m, fpair_t p) {
     return ret;
 }
 
-void printMat(AffineMat m) {
-    printf("%.2f %.2f %.2f\n", m.a, m.b, m.tx);
-    printf("%.2f %.2f %.2f\n", m.c, m.d, m.ty);
-    printf("%.2f %.2f %.2f\n\n", 0.0f, 0.0f, 1.0f);
-}
+// void printMat(AffineMat m) {
+//     printf("%.2f %.2f %.2f\n", m.a, m.b, m.tx);
+//     printf("%.2f %.2f %.2f\n", m.c, m.d, m.ty);
+//     printf("%.2f %.2f %.2f\n\n", 0.0f, 0.0f, 1.0f);
+// }
 
-void transformCsv(const char *inputPath, const char *outputPath, AffineMat transform) {
-    FILE *in = fopen(inputPath, "r");
-    if (!in) {
-        printf("Failed to open %s\n", inputPath);
-        return;
-    }
+// void transformCsv(const char *inputPath, const char *outputPath, AffineMat transform) {
+//     FILE *in = fopen(inputPath, "r");
+//     if (!in) {
+//         printf("Failed to open %s\n", inputPath);
+//         return;
+//     }
 
-    FILE *out = fopen(outputPath, "w");
-    if (!out) {
-        printf("Failed to open %s\n", outputPath);
-        fclose(in);
-        return;
-    }
+//     FILE *out = fopen(outputPath, "w");
+//     if (!out) {
+//         printf("Failed to open %s\n", outputPath);
+//         fclose(in);
+//         return;
+//     }
 
-    float x, y;
-    while (fscanf(in, "%f,%f", &x, &y) == 2) {
-        fpair_t p = {x, y};
-        fpair_t result = matPointMultiply(transform, p);
-        fprintf(out, "%.6f,%.6f\n", result.x, result.y);
-    }
+//     float x, y;
+//     while (fscanf(in, "%f,%f", &x, &y) == 2) {
+//         fpair_t p = {x, y};
+//         fpair_t result = matPointMultiply(transform, p);
+//         fprintf(out, "%.6f,%.6f\n", result.x, result.y);
+//     }
 
-    fclose(in);
-    fclose(out);
-}
-
-int main() {
-    printf("Beginning point_math tests\n");
-
-    AffineMat sourceMat = getAffineMat((fpair_t){0,0}, (fpair_t){0.391,0.391}, (fpair_t){0,0.9});
-    matInvert(&sourceMat);
-    AffineMat destMat = getAffineMat((fpair_t){0,0}, (fpair_t){0.5,0.5}, (fpair_t){0,1});
-
-    AffineMat transformMat = matMultiply(destMat, sourceMat);
-
-    printf("Transform matrix:\n");
-    printMat(transformMat);
-
-    printf("p1 -> ");
-    fpair_t result = matPointMultiply(transformMat, (fpair_t){0.0f, 0.0f});
-    printf("%.3f %.3f\n", result.x, result.y);
-
-    printf("p2 -> ");
-    result = matPointMultiply(transformMat, (fpair_t){0.391f, 0.391f});
-    printf("%.3f %.3f\n", result.x, result.y);
-
-    printf("p3 -> ");
-    result = matPointMultiply(transformMat, (fpair_t){0.0f, 0.9f});
-    printf("%.3f %.3f\n", result.x, result.y);
-
-    transformCsv("real.csv", "out.csv", transformMat);
-}
+//     fclose(in);
+//     fclose(out);
+// }

@@ -3,7 +3,7 @@
  *
  * Created: 25.02.2015 17:48:54
  * Original Author: Jakob Schäfer
- * Cardinal-Based Scaling Edit: Andrew K.
+ * Affine Transform Changes: Andrew K.
  *
  * ONLY FOR YOUR OWN PERSONAL USE! COMMERCIAL USE PROHIBITED!
  * NUR FÜR DEN EIGENGEBRAUCH! GEWERBLICHE NUTZUNG VERBOTEN!
@@ -84,7 +84,7 @@ Includes
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/eeprom.h>
-#include "math.h"
+#include "point_math.h"
 
 /******************************************************************************
 Prototypes
@@ -104,7 +104,7 @@ uint16_t GetX(void);
 uint16_t GetY(void);
 
 // scales the 16 bit ADC value down to 8 bits: result = raw16 * factor c / 256
-pair8_t ScaleDown(pair16_t raw, pair16_t neutral);
+uint8_pair_t ScaleDown(uint16_pair_t raw, uint16_pair_t neutral);
 
 // rotates a byte left by one bit
 uint8_t RotateLeft(uint8_t cData);
@@ -116,7 +116,7 @@ uint8_t RotateRight(uint8_t cData);
 uint8_t CalculateScalingFactor(uint16_t reading, uint16_t neutral);
 
 // returns scaling factor pair to be used for scaling `raw`
-pair8_t GetScalingFactor(pair16_t raw, pair16_t neutral);
+uint8_pair_t GetScalingFactor(uint16_pair_t raw, uint16_pair_t neutral);
 
 // calculates the c factors and saves them into EEPROM
 void Calibration(void);
@@ -125,7 +125,14 @@ void Calibration(void);
 EEPROM Variables
 ******************************************************************************/
 
-#define gate_1
+#define GATE_NORTH     {0,100}
+#define GATE_NORTHEAST {75,75}
+#define GATE_EAST      {100,0}
+#define GATE_SOUTHEAST {75,-75}
+#define GATE_SOUTH     {0,-100}
+#define GATE_SOUTHWEST {-75,-75}
+#define GATE_WEST      {-100,0}
+#define GATE_NORTHWEST {-75,75}
 
 // factors for x & y axis in standard range mode
 uint8_t EEMEM cx_std = 0;
@@ -141,37 +148,22 @@ uint8_t	EEMEM firstPowerOn = 1;
 // stores the position of the calibration slider switch
 uint8_t EEMEM calibSwitch;
 
-pair16_t EEMEM eeprom_quadrantLimits[4];
-pair8_t  EEMEM eeprom_quadrantScalingFactors[4];
-extraScalingFactors_t EEMEM eeprom_extraScalingFactors;
+AffineMat EEMEM eeprom_transformMats[8];
+uint16_pair_t EEMEM eeprom_cardinals[8];
 
 /******************************************************************************
 Global Variables
 ******************************************************************************/
 
 /*
-	Stores the cardinal reading that defines the limit of each quadrant, in clockwise order
-	- quadrantLimits[0]: Top-right corner of yellow quadrant
-	- quadrantLimits[1]: Bottom-right corner of orange quadrant
-	- quadrantLimits[2]: Bottom-left corner of grey quadrant
-	- quadrantLimits[3]: Top-left corner of green quadrant
+	Stores the original calibration inputs
 */
-pair16_t quadrantLimits[4];
+uint16_pair_t cardinals[8];
 
 /*
-	Stores the X and Y scaling factors to be used when stick reading is in each quadrant
-	- quadrantScalingFactors[0]: factors for yellow quadrant
-	- quadrantScalingFactors[1]: factors for orange quadrant
-	- quadrantScalingFactors[2]: factors for grey quadrant
-	- quadrantScalingFactors[3]: factors for green quadrant
+	Stores the affine matricies used to transform stick readings from real to ideal
 */
-pair8_t quadrantScalingFactors[4];
-
-/*
-	Stores the scaling factor to be used when an X or Y coordinate is outside of our quadrants,
-	in the blue/purple triangle area
-*/
-extraScalingFactors_t extraScalingFactors;
+AffineMat transformMats[8];
 
 /******************************************************************************
 Fuses
@@ -187,8 +179,8 @@ int main(void)
 	uint8_t yWheel = 0b00110011;
 	uint8_t maxRange;
 
-	pair16_t neutral16, raw;
-	pair8_t neutral8, old, pos;
+	uint16_pair_t neutral16, raw;
+	uint8_pair_t neutral8, old, pos;
 
 	// set up the ports immediately
 	DDRA = (1<<DDA6)|(1<<DDA7);
@@ -228,17 +220,13 @@ int main(void)
 		Calibration();
 	} else {
 		// Load calibration
-		eeprom_read_block(quadrantLimits,
-						  eeprom_quadrantLimits,
-						  sizeof(quadrantLimits));
+		eeprom_read_block(cardinals,
+						  eeprom_cardinals,
+						  sizeof(cardinals));
 
-		eeprom_read_block(quadrantScalingFactors,
-						  eeprom_quadrantScalingFactors,
-						  sizeof(quadrantScalingFactors));
-
-		eeprom_read_block(&extraScalingFactors,
-						  &eeprom_extraScalingFactors,
-						  sizeof(extraScalingFactors));
+		eeprom_read_block(transformMats,
+						  eeprom_transformMats,
+						  sizeof(transformMats));
 	}
 
 	// first AD conversion; initialize analog circuitry
@@ -368,14 +356,13 @@ uint8_t CalculateScalingFactor(uint16_t reading, uint16_t neutral) {
 }
 
 void Calibration(void){
-	pair16_t neutral, reading;
+	uint16_pair_t neutral;
 
 	// reset firstPowerOn variable in EEPROM
 	eeprom_update_byte(&firstPowerOn, 0x00);
 	// store the calibration slider switch's position
 	eeprom_update_byte(&calibSwitch, (PINB&(1<<PORTB2)) );
 
-	// Get neutral
 	neutral.x = GetX();
 	neutral.y = GetY();
 
@@ -387,47 +374,32 @@ void Calibration(void){
 		// wait for Z button press
 		while ((PINA&(1<<PORTA3)));
 
-		reading.x = GetX();
-		reading.y = GetY();
+		cardinals[i].x = GetX();
+		cardinals[i].y = GetY();
 
-		switch (i) {
-			case 0: // North
-				extraScalingFactors.north = CalculateScalingFactor(reading.y, neutral.y);
-				break;
-			case 2: // East
-				extraScalingFactors.east = CalculateScalingFactor(reading.x, neutral.x);
-				break;
-			case 4: // South
-				extraScalingFactors.south = CalculateScalingFactor(reading.y, neutral.y);
-				break;
-			case 6: // West
-				extraScalingFactors.west = CalculateScalingFactor(reading.x, neutral.x);
-				break;
-			default: // Corners of quadrants
-				quadrantLimits[i/2] = reading;
-				quadrantScalingFactors[i/2].x = CalculateScalingFactor(reading.x, neutral.x);
-				quadrantScalingFactors[i/2].y = CalculateScalingFactor(reading.y, neutral.y);
-				break;
+		if (i == 0) {
+			// With just the first point, we can't calculate any matricies
+			continue;
+		} else if (i == 7) {
+			// After getting the last cardinal, we can calculate the last two matricies
+
+		} else {
 		}
 	}
 
-	// write it all to eeprom
-	eeprom_update_block(quadrantLimits,
-						eeprom_quadrantLimits,
-						sizeof(quadrantLimits));
+	// write calibration to eeprom
+	eeprom_update_block(cardinals,
+						eeprom_cardinals,
+						sizeof(cardinals));
 
-	eeprom_update_block(quadrantScalingFactors,
-						eeprom_quadrantScalingFactors,
-						sizeof(quadrantScalingFactors));
-
-	eeprom_update_block(&extraScalingFactors,
-						&eeprom_extraScalingFactors,
-						sizeof(extraScalingFactors));
+	eeprom_update_block(transformMats,
+						eeprom_transformMats,
+						sizeof(transformMats));
 }
 
-pair8_t GetScalingFactor(pair16_t raw, pair16_t neutral) {
-	pair16_t limits;
-	pair8_t sf;
+uint8_pair_t GetScalingFactor(uint16_pair_t raw, uint16_pair_t neutral) {
+	uint16_pair_t limits;
+	uint8_pair_t sf;
 
 	// left bit is x, right is y. 1=pos, 0=neg
 	uint8_t key = ((raw.x > neutral.x) << 1) | (raw.y > neutral.y);
@@ -464,10 +436,10 @@ pair8_t GetScalingFactor(pair16_t raw, pair16_t neutral) {
 	return sf;
 }
 
-pair8_t ScaleDown(pair16_t raw, pair16_t neutral){
-	pair8_t sf = GetScalingFactor(raw, neutral);
+uint8_pair_t ScaleDown(uint16_pair_t raw, uint16_pair_t neutral){
+	uint8_pair_t sf = GetScalingFactor(raw, neutral);
 
-	pair8_t ret;
+	uint8_pair_t ret;
 	ret.x = (uint8_t) ((raw.x*sf.x) >> 8);
 	ret.y = (uint8_t) ((raw.y*sf.y) >> 8);
 

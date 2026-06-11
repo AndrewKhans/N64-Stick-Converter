@@ -1,14 +1,7 @@
-/*
-Todo:
-*/
-
 #ifndef POINT_MATH_H
 #define POINT_MATH_H
 
-#include <stddef.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <math.h>
+#include <avr/io.h>
 
 typedef struct AffineMat {
     float a, b, tx, c, d, ty;
@@ -22,11 +15,16 @@ typedef struct {
 typedef struct {
 	uint16_t x;
 	uint16_t y;
-} pair16_t;
+} uint16_pair_t;
 
 typedef struct {
 	uint8_t x;
 	uint8_t y;
-} pair8_t;
+} uint8_pair_t;
+
+AffineMat getAffineMat(fpair_t p1, fpair_t p2, fpair_t p3);
+void matInvert(AffineMat *m);
+AffineMat matMultiply(AffineMat m1, AffineMat m2);
+fpair_t matPointMultiply(AffineMat m, fpair_t p);
 
 #endif

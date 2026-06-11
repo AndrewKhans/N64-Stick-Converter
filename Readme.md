@@ -1,7 +1,5 @@
-export ANTHROPIC_AUTH_TOKEN=ollama
-export ANTHROPIC_API_KEY=""
-export ANTHROPIC_BASE_URL=http://desktop-k054srv:11434
-
+# Compilation
+avr-gcc -mmcu=attiny24a -O1 -g point_math.c "N64 Stick Converter PCB.c"
 
 # Calibration
 Point your stick to the North gate, then press Z. Point to the Northeast gate, then press Z. Continue clockwise for all 8 gates, then you're ready to game
@@ -28,6 +26,8 @@ Point your stick to the North gate, then press Z. Point to the Northeast gate, t
 1. Can we use it to scale 16 bit number to 8 bit?
 2. How to get the corners of the real triangle?
     - Corner by corner calibration
+3. How to determine which quadrant we're in?
+    - We need to save raw cardinals
 
 # Scaling Factor Version
 ## Issues
