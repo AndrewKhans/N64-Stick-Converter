@@ -2,64 +2,42 @@ import csv
 
 import matplotlib.pyplot as plt
 
-resolution = 0.03
+uint16_t GetX() {
+    static int count = 0;
+	uint16_t x_readings[] = {
+		512, // Neutral x
+		512, // Neutral x again for second neutral grab
+		512, // North
+		630, // NE
+		650, // East
+		630, // SE
+		512, // South
+		400, // SW
+		380, // West
+		400, // NW
+		540, // Test point 1 (in northeast quadrant)
+	};
+	return x_readings[count++];
+}
 
-
-def generateReal():
-    x_vals = []
-    y_vals = []
-    x = 0
-    while x <= 0.39:
-        y = 0
-
-        # At this x, generate Y points down to zero
-        y = (-1.3) * x + 0.9
-        while y >= x:
-            y -= resolution
-
-            x_vals.append(x)
-            y_vals.append(y)
-        x += resolution
-
-    return x_vals, y_vals
-
-
-def generateIdeal():
-    x_vals = []
-    y_vals = []
-    x = 0
-    while x <= 0.5:
-        y = 0
-
-        # At this x, generate Y points down to zero
-        y = -x + 1
-        while y >= x:
-            y -= resolution
-
-            x_vals.append(x)
-            y_vals.append(y)
-        x += resolution
-    return x_vals, y_vals
-
-
-def write_csv(filename, x_vals, y_vals):
-    with open(filename, "w", newline="") as f:
-        writer = csv.writer(f)
-        for x, y in zip(x_vals, y_vals):
-            writer.writerow([x, y])
-
-
-def read_csv(filename):
-    x_vals = []
-    y_vals = []
-
-    with open(filename, "r", newline="") as f:
-        reader = csv.reader(f)
-        for row in reader:
-            x_vals.append(float(row[0]))
-            y_vals.append(float(row[1]))
-
-    return x_vals, y_vals
+// Mock
+uint16_t GetY() {
+    static int count = 0;
+	uint16_t y_readings[] = {
+		512, // Neutral y
+		512, // Neutral y again for second neutral grab
+		650, // North
+		630, // NE
+		512, // East
+		400, // SE
+		380, // South
+		400, // SW
+		512, // West
+		630, // NW
+		530, // Test point 1 (in northeast quadrant)
+	};
+	return y_readings[count++];
+}
 
 
 f1 = plt.figure()

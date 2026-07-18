@@ -1,9 +1,9 @@
 #include "point_math.h"
-#include "stdio.h"
 
 /*
     Get an affine matrix that maps the unit triangle to the triangle made
-    from p1, p2, and p3, where p1 is treated as the origin
+    from p1, p2, and p3, where p1 is treated as the origin, and the rest of the points
+    follow counter-clockwise
 */
 AffineMat getAffineMat(fpair_t p1, fpair_t p2, fpair_t p3) {
     AffineMat m;
@@ -19,10 +19,13 @@ AffineMat getAffineMat(fpair_t p1, fpair_t p2, fpair_t p3) {
 }
 
 void matInvert(AffineMat *m) {
-    // Todo: Handle divide by zero
     float tmp;
     float det = (m->a*m->d) - (m->b*m->c);
-    if (det == 0) det = 0.00001;
+
+    // avoid divide-by-zero errors
+    if (det > -FLOAT_COMPARE_EPS && det < FLOAT_COMPARE_EPS) {
+        det = (det >= 0.0f) ? FLOAT_COMPARE_EPS : -FLOAT_COMPARE_EPS;
+    }
 
     tmp = m->tx;
     m->tx = (m->b*m->ty - m->d*m->tx)/det;
@@ -87,4 +90,32 @@ fpair_t matPointMultiply(AffineMat m, fpair_t p) {
 
 //     fclose(in);
 //     fclose(out);
+// }
+
+
+// int main() {
+//     printf("Beginning point_math tests\n");
+
+//     AffineMat sourceMat = getAffineMat((fpair_t){0,0}, (fpair_t){0.391,0.391}, (fpair_t){0,0.9});
+//     matInvert(&sourceMat);
+//     AffineMat destMat = getAffineMat((fpair_t){0,0}, (fpair_t){0.5,0.5}, (fpair_t){0,1});
+
+//     AffineMat transformMat = matMultiply(destMat, sourceMat);
+
+//     printf("Transform matrix:\n");
+//     printMat(transformMat);
+
+//     printf("p1 -> ");
+//     fpair_t result = matPointMultiply(transformMat, (fpair_t){0.0f, 0.0f});
+//     printf("%.3f %.3f\n", result.x, result.y);
+
+//     printf("p2 -> ");
+//     result = matPointMultiply(transformMat, (fpair_t){0.391f, 0.391f});
+//     printf("%.3f %.3f\n", result.x, result.y);
+
+//     printf("p3 -> ");
+//     result = matPointMultiply(transformMat, (fpair_t){0.0f, 0.9f});
+//     printf("%.3f %.3f\n", result.x, result.y);
+
+//     transformCsv("real.csv", "out.csv", transformMat);
 // }

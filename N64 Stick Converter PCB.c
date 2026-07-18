@@ -3,7 +3,7 @@
  *
  * Created: 25.02.2015 17:48:54
  * Original Author: Jakob Schäfer
- * Affine Transform Changes: Andrew K.
+ * Affine Transform-Based Calibration: Andrew K.
  *
  * ONLY FOR YOUR OWN PERSONAL USE! COMMERCIAL USE PROHIBITED!
  * NUR FÜR DEN EIGENGEBRAUCH! GEWERBLICHE NUTZUNG VERBOTEN!
@@ -68,6 +68,15 @@ Macros & Defines
 // clock frequency
 #define F_CPU 1000000UL
 
+#define GATE_NORTH     {0,100}
+#define GATE_NORTHEAST {75,75}
+#define GATE_EAST      {100,0}
+#define GATE_SOUTHEAST {75,-75}
+#define GATE_SOUTH     {0,-100}
+#define GATE_SOUTHWEST {-75,-75}
+#define GATE_WEST      {-100,0}
+#define GATE_NORTHWEST {-75,75}
+
 // +/- minimum range that will be achieved for each axis in standard range mode
 #define MIN_RANGE_STD 101
 // max. range limit in standard range mode; higher values will be clipped
@@ -90,13 +99,6 @@ Includes
 Prototypes
 ******************************************************************************/
 
-typedef struct {
-	uint8_t north; // Y factor for the triangle area to the north
-	uint8_t east;  // X factor for the triangle area to the east
-	uint8_t south; // Y factor for the triangle area to the south
-	uint8_t west;  // X factor for the triangle area to the west
-} extraScalingFactors_t;
-
 // returns a 16 bit ADC value of the potentiometer stick's x axis (0 - 1023)
 uint16_t GetX(void);
 
@@ -104,7 +106,7 @@ uint16_t GetX(void);
 uint16_t GetY(void);
 
 // scales the 16 bit ADC value down to 8 bits: result = raw16 * factor c / 256
-uint8_pair_t ScaleDown(uint16_pair_t raw, uint16_pair_t neutral);
+uint8_pair_t ApplyTransform(uint16_pair_t raw, uint16_pair_t neutral);
 
 // rotates a byte left by one bit
 uint8_t RotateLeft(uint8_t cData);
@@ -112,35 +114,11 @@ uint8_t RotateLeft(uint8_t cData);
 // rotates a byte left by one bit
 uint8_t RotateRight(uint8_t cData);
 
-// helper function for Calibration
-uint8_t CalculateScalingFactor(uint16_t reading, uint16_t neutral);
-
-// returns scaling factor pair to be used for scaling `raw`
-uint8_pair_t GetScalingFactor(uint16_pair_t raw, uint16_pair_t neutral);
-
-// calculates the c factors and saves them into EEPROM
 void Calibration(void);
 
 /******************************************************************************
 EEPROM Variables
 ******************************************************************************/
-
-#define GATE_NORTH     {0,100}
-#define GATE_NORTHEAST {75,75}
-#define GATE_EAST      {100,0}
-#define GATE_SOUTHEAST {75,-75}
-#define GATE_SOUTH     {0,-100}
-#define GATE_SOUTHWEST {-75,-75}
-#define GATE_WEST      {-100,0}
-#define GATE_NORTHWEST {-75,75}
-
-// factors for x & y axis in standard range mode
-uint8_t EEMEM cx_std = 0;
-uint8_t EEMEM cy_std = 0;
-
-// factors for x & y axis in extended range mode
-uint8_t EEMEM cx_xtd = 0;
-uint8_t EEMEM cy_xtd = 0;
 
 // for detecting first power on
 uint8_t	EEMEM firstPowerOn = 1;
@@ -155,14 +133,10 @@ uint16_pair_t EEMEM eeprom_cardinals[8];
 Global Variables
 ******************************************************************************/
 
-/*
-	Stores the original calibration inputs
-*/
-uint16_pair_t cardinals[8];
+/* Stores the original calibration inputs */
+fpair_t cardinals[8];
 
-/*
-	Stores the affine matricies used to transform stick readings from real to ideal
-*/
+/* Stores the affine matricies used to transform stick readings from real to ideal */
 AffineMat transformMats[8];
 
 /******************************************************************************
@@ -200,14 +174,19 @@ int main(void)
 	ADCSRA = (1<<ADPS0)|(1<<ADPS1);			// prescaler = 8 ==> f_ADC = 1 MHz/8 = 125 kHz
 	ADCSRA |= (1<<ADEN);					// enable ADC
 
-	// extended range mode if ext. range mode button is pushed
-	if ( !(PINA&(1<<PORTA5)) ){
+
+	if ( !(PINA&(1<<PORTA5)) ){ // extended range mode if ext. range mode button is pushed
 		maxRange = MAX_RANGE_XTD;
-	}
-	// standard range mode otherwise
-	else{
+	} else{ // standard range mode otherwise
 		maxRange = MAX_RANGE_STD;
 	}
+
+	// first AD conversion; initialize analog circuitry
+	neutral16.x = GetX();
+
+	// get neutral position
+	neutral16.x = GetX();
+	neutral16.y = GetY();
 
 	// execute calibration if:
 	// a) microcontroller is powered on for the first time or
@@ -229,33 +208,19 @@ int main(void)
 						  sizeof(transformMats));
 	}
 
-	// first AD conversion; initialize analog circuitry
-	neutral16.x = GetX();
-
-	// get neutral position
-	neutral16.x = GetX();
-	neutral16.y = GetY();
 
 	// scale down neutral reading. it's fine to use the neutral reading to
 	// pick the scaling factors, as they will all yield a similar result
-	neutral8 = ScaleDown(neutral16, neutral16);
+	neutral8 = ApplyTransform(neutral16, neutral16);
 
 	old = neutral8;
 
     while(1)
     {
-		// get x axis position
 		raw.x = GetX();
 		raw.y = GetY();
 		// scale down
-		pos = ScaleDown(raw, neutral16);
-
-		// limit position to  +/- maxRange (x)
-		if ( (pos.x>neutral8.x) && ((pos.x-neutral8.x) > maxRange) ) pos.x = neutral8.x + maxRange;
-		if ( (pos.x<neutral8.x) && ((neutral8.x-pos.x) > maxRange) ) pos.x = neutral8.x - maxRange;
-		// limit position to  +/- maxRange (y)
-		if ( (pos.y>neutral8.y) && ((pos.y-neutral8.y) > maxRange) ) pos.y = neutral8.y + maxRange;
-		if ( (pos.y<neutral8.y) && ((neutral8.y-pos.y) > maxRange) ) pos.y = neutral8.y - maxRange;
+		pos = ApplyTransform(raw, neutral16);
 
 		// calculate the amount of steps (= increments or decrements) for both axes
 		xSteps =  (int16_t) pos.x - old.x;
@@ -291,9 +256,7 @@ int main(void)
 			PORTB = (PORTB&0b11111100)|(xWheel & 0b00000011);
 			PORTA = (PORTA&0b00111111)|(yWheel & 0b11000000);
 		}
-
     }
-
 }
 
 
@@ -335,55 +298,62 @@ uint8_t RotateRight (uint8_t cData){
 	return result;
 }
 
-uint8_t CalculateScalingFactor(uint16_t reading, uint16_t neutral) {
-	uint16_t temp, sf;
-
-	if (reading > neutral){
-		temp = reading - neutral;
-	} else if (reading < neutral) {
-		temp = neutral - reading;
-	} else {
-		// this would occur if you didn't move your stick from neutral during calibration
-		temp = 1;
-	}
-
-	// calculate factor (standard mode)
-	sf = ((MIN_RANGE_STD*256)/temp);
-	// if remainder, add one
-	if ( ((MIN_RANGE_STD*256)%temp) > 0  ) sf++;
-
-	return (uint8_t)sf;
-}
-
-void Calibration(void){
-	uint16_pair_t neutral;
+void Calibration(void) {
+	fpair_t neutral;
 
 	// reset firstPowerOn variable in EEPROM
 	eeprom_update_byte(&firstPowerOn, 0x00);
 	// store the calibration slider switch's position
 	eeprom_update_byte(&calibSwitch, (PINB&(1<<PORTB2)) );
 
-	neutral.x = GetX();
-	neutral.y = GetY();
+	neutral.x = (float)GetX();
+	neutral.y = (float)GetY();
+
+	static const fpair_t idealGates[8] = {GATE_NORTH, GATE_NORTHEAST, GATE_EAST, GATE_SOUTHEAST, \
+                      					  GATE_SOUTH, GATE_SOUTHWEST, GATE_WEST, GATE_NORTHWEST };
 
 	for (uint8_t i = 0; i < 8; i++) {
-		_delay_ms(50); // debounce previous press
-		// wait for Z button release
-		while (!(PINA&(1<<PORTA3)));
-		_delay_ms(50); // debounce
-		// wait for Z button press
-		while ((PINA&(1<<PORTA3)));
+		_delay_ms(50);               // debounce previous press
+		while (!(PINA&(1<<PORTA3))); // wait for Z button release
+		_delay_ms(50);               // debounce
+		while ((PINA&(1<<PORTA3)));  // wait for Z button press
 
 		cardinals[i].x = GetX();
 		cardinals[i].y = GetY();
 
 		if (i == 0) {
-			// With just the first point, we can't calculate any matricies
+			// With just one cardinal, we can't calculate any matricies
 			continue;
-		} else if (i == 7) {
-			// After getting the last cardinal, we can calculate the last two matricies
-
 		} else {
+			// Build S = unit->real using neutral,p2,p3
+			fpair_t p2 = cardinals[i];
+			fpair_t p3 = cardinals[i-1];
+			AffineMat S = getAffineMat(neutral, p2, p3);
+
+			fpair_t origin = {0.0f, 0.0f};
+			fpair_t d2 = idealGates[i];
+			fpair_t d3 = idealGates[i-1];
+			AffineMat D = getAffineMat(origin, d2, d3);
+
+			// M = D * S^-1 maps real -> ideal
+			AffineMat S_inv = S;
+			matInvert(&S_inv);
+			transformMats[i-1] = matMultiply(D, S_inv);
+
+			// After getting the 8th cardinal, calculate the 8th matrix
+			if (i == 7) {
+				p2 = cardinals[0];
+				p3 = cardinals[7];
+
+				S = getAffineMat(neutral, p2, p3);
+				S_inv = S;
+				matInvert(&S_inv);
+
+				d2 = idealGates[0];
+				d3 = idealGates[7];
+				D = getAffineMat(origin, d2, d3);
+				transformMats[7] = matMultiply(D, S_inv);
+			}
 		}
 	}
 
@@ -397,51 +367,70 @@ void Calibration(void){
 						sizeof(transformMats));
 }
 
-uint8_pair_t GetScalingFactor(uint16_pair_t raw, uint16_pair_t neutral) {
-	uint16_pair_t limits;
-	uint8_pair_t sf;
+/* Return the octant (like "quadrant" but for eight) of the stick that `point` is in */
+// Simpler approach: determine quadrant by signs, then test against the diagonal cardinal
+static inline uint8_t GetOctant(fpair_t point, fpair_t neutral) {
+    fpair_t pointVec, cardinalVec;
 
-	// left bit is x, right is y. 1=pos, 0=neg
-	uint8_t key = ((raw.x > neutral.x) << 1) | (raw.y > neutral.y);
-	switch (key) {
-	    case 0b11: // x > 0, y > 0
-			sf     = quadrantScalingFactors[0];
-			limits = quadrantLimits[0];
-			if (raw.x > limits.x) sf.x = extraScalingFactors.east;
-			if (raw.y > limits.y) sf.y = extraScalingFactors.north;
-	        break;
+    // vector from neutral to point
+    pointVec.x = point.x - neutral.x;
+    pointVec.y = point.y - neutral.y;
 
-	    case 0b10: // x > 0, y <= 0
-			sf     = quadrantScalingFactors[1];
-			limits = quadrantLimits[1];
-			if (raw.x > limits.x) sf.x = extraScalingFactors.east;
-			if (raw.y < limits.y) sf.y = extraScalingFactors.south;
-	        break;
+    if (pointVec.x == 0.0f && pointVec.y == 0.0f) return 0;
 
-	    case 0b00: // x <= 0, y <= 0
-			sf     = quadrantScalingFactors[2];
-			limits = quadrantLimits[2];
-			if (raw.x < limits.x) sf.x = extraScalingFactors.west;
-			if (raw.y < limits.y) sf.y = extraScalingFactors.south;
-	        break;
+    uint8_t posX = (pointVec.x > 0.0f);
+    uint8_t posY = (pointVec.y > 0.0f);
 
-	    case 0b01: // x <= 0, y > 0
-			sf     = quadrantScalingFactors[3];
-			limits = quadrantLimits[3];
-			if (raw.x < limits.x) sf.x = extraScalingFactors.west;
-			if (raw.y > limits.y) sf.y = extraScalingFactors.north;
-	        break;
-	}
+    // choose the diagonal cardinal that splits this quadrant
+    // ordering of cardinals: 0=N,1=NE,2=E,3=SE,4=S,5=SW,6=W,7=NW
+    uint8_t diag;
+    if (posX && posY)      diag = 1; // NE quadrant
+    else if (posX && !posY) diag = 3; // SE quadrant
+    else if (!posX && !posY)diag = 5; // SW quadrant
+    else                    diag = 7; // NW quadrant
 
-	return sf;
+    // vector from neutral to that diagonal cardinal
+    cardinalVec.x = cardinals[diag].x - neutral.x;
+    cardinalVec.y = cardinals[diag].y - neutral.y;
+
+    // cross product tells which side of the diagonal pointVec lies on
+    float cross = cardinalVec.x * pointVec.y - cardinalVec.y * pointVec.x;
+
+    // if pointVec is to the left (CCW) of the diagonal, it is in the octant closer to the previous cardinal
+    if (cross > FLOAT_COMPARE_EPS) {
+        // octant is diag-1 (wrap around)
+        return (diag == 0) ? 7 : (diag - 1);
+    }
+
+    // otherwise it's the octant at diag
+    return diag;
 }
 
-uint8_pair_t ScaleDown(uint16_pair_t raw, uint16_pair_t neutral){
-	uint8_pair_t sf = GetScalingFactor(raw, neutral);
+// Determine which pizza slice we're in
+// Apply transform from that slice
+// Convert floats to uint8
+uint8_pair_t ApplyTransform(uint16_pair_t raw, uint16_pair_t neutral){
+	fpair_t rawf = {(float)raw.x, (float)raw.y};
+	fpair_t neutralf = {(float)neutral.x, (float)neutral.y};
 
-	uint8_pair_t ret;
-	ret.x = (uint8_t) ((raw.x*sf.x) >> 8);
-	ret.y = (uint8_t) ((raw.y*sf.y) >> 8);
+	uint8_t octant = GetOctant(rawf, neutralf);
 
+	// Work on a local copy of the affine matrix and invert it to map real->ideal
+	AffineMat transformMat = transformMats[octant];
+	// Map raw reading into the unit/barycentric coordinates (u,v)
+	fpair_t pointT = matPointMultiply(transformMat, rawf);
+
+	// Map ideal gate coords (centered at 0) to 8-bit space with center at 128
+	// TODO: Is the output supposed to be centered at 128?
+	pointT.x += 128.0f;
+	pointT.y += 128.0f;
+
+	if (pointT.x < 0.0f)   pointT.x = 0.0f;
+	if (pointT.x > 255.0f) pointT.x = 255.0f;
+	if (pointT.y < 0.0f)   pointT.y = 0.0f;
+	if (pointT.y > 255.0f) pointT.y = 255.0f;
+
+	// Todo: To improve accuracy, round before casting
+	uint8_pair_t ret = {(uint8_t)pointT.x, (uint8_t)pointT.y};
 	return ret;
 }
