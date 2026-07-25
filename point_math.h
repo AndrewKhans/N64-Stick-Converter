@@ -1,8 +1,8 @@
 #ifndef POINT_MATH_H
 #define POINT_MATH_H
 
-// #include <avr/io.h>
-#include <stdint.h>
+#include <avr/io.h>
+// #include <stdint.h>
 
 #define FLOAT_COMPARE_EPS 1e-5f
 
