@@ -56,9 +56,6 @@
  * 					|	N64 controller PCB pin no. 4			|
  * -------------------------------------------------------------|
  *
- *
- * If you want to increase/decrease the range of the stick, then try
- * out new values for the MIN_RANGE and MAX_RANGE constants below:
  */
 
 
@@ -76,16 +73,6 @@ Macros & Defines
 #define GATE_SOUTHWEST {-75,-75}
 #define GATE_WEST      {-100,0}
 #define GATE_NORTHWEST {-75,75}
-
-// +/- minimum range that will be achieved for each axis in standard range mode
-#define MIN_RANGE_STD 101
-// max. range limit in standard range mode; higher values will be clipped
-#define MAX_RANGE_STD 105
-
-// +/- minimum range that will be achieved for each axis in extended range mode
-#define MIN_RANGE_XTD 101
-// max. range limit in extended range mode, higher values will be clipped
-#define MAX_RANGE_XTD 105
 
 /******************************************************************************
 Includes
@@ -151,7 +138,6 @@ int main(void)
 	int16_t xSteps, ySteps;
 	uint8_t xWheel = 0b11001100;
 	uint8_t yWheel = 0b00110011;
-	uint8_t maxRange;
 
 	uint16_pair_t neutral16, raw;
 	uint8_pair_t neutral8, old, pos;
@@ -174,12 +160,6 @@ int main(void)
 	ADCSRA = (1<<ADPS0)|(1<<ADPS1);			// prescaler = 8 ==> f_ADC = 1 MHz/8 = 125 kHz
 	ADCSRA |= (1<<ADEN);					// enable ADC
 
-
-	if ( !(PINA&(1<<PORTA5)) ){ // extended range mode if ext. range mode button is pushed
-		maxRange = MAX_RANGE_XTD;
-	} else{ // standard range mode otherwise
-		maxRange = MAX_RANGE_STD;
-	}
 
 	// first AD conversion; initialize analog circuitry
 	neutral16.x = GetX();
