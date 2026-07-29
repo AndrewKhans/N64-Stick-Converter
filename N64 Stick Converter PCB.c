@@ -83,7 +83,6 @@ Includes
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/eeprom.h>
-#include "point_math.h"
 
 /******************************************************************************
 Prototypes
@@ -109,12 +108,10 @@ typedef struct {
 } uint8_pair_t;
 
 
-
 AffineMat getAffineMat(fpair_t p1, fpair_t p2, fpair_t p3);
 void matInvert(AffineMat *m);
 AffineMat matMultiply(AffineMat m1, AffineMat m2);
 fpair_t matPointMultiply(AffineMat m, fpair_t p);
-
 
 // returns a 16 bit ADC value of the potentiometer stick's x axis (0 - 1023)
 uint16_t GetX(void);
@@ -394,10 +391,10 @@ static inline uint8_t GetOctant(fpair_t point, fpair_t neutral) {
     // choose the diagonal cardinal that splits this quadrant
     // ordering of cardinals: 0=N,1=NE,2=E,3=SE,4=S,5=SW,6=W,7=NW
     uint8_t diag;
-    if (posX && posY)      diag = 1; // NE quadrant
-    else if (posX && !posY) diag = 3; // SE quadrant
-    else if (!posX && !posY)diag = 5; // SW quadrant
-    else                    diag = 7; // NW quadrant
+    if (posX && posY)        diag = 1; // NE quadrant
+    else if (posX && !posY)  diag = 3; // SE quadrant
+    else if (!posX && !posY) diag = 5; // SW quadrant
+    else                     diag = 7; // NW quadrant
 
     // vector from neutral to that diagonal cardinal
     cardinalVec.x = cardinals[diag].x - neutral.x;
@@ -444,7 +441,6 @@ uint8_pair_t ApplyTransform(uint16_pair_t raw, uint16_pair_t neutral){
 	uint8_pair_t ret = {(uint8_t)pointT.x, (uint8_t)pointT.y};
 	return ret;
 }
-
 
 /*
     Get an affine matrix that maps the unit triangle to the triangle made
