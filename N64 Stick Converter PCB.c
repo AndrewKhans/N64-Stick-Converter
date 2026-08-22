@@ -38,7 +38,7 @@
  * 7				|	N64 controller PCB pin no. 1			|
  * 					|	MOSI for programming					|
  * -------------------------------------------------------------|
- * 8				|	extended range mode button (active low)	|
+ * 8 (PortA5)		|	extended range mode button (active low)	|
  *					|	short to GND to use extended range mode	|
  * -------------------------------------------------------------|
  * 9				|	SCK for programming						|
@@ -172,7 +172,7 @@ int main(void)
 	// set up the ports immediately
 	DDRA = (1<<DDA6)|(1<<DDA7);
 	DDRB = (1<<DDB0)|(1<<DDB1);
-	PORTA = (1<<PORTA2)|(1<<PORTA3)|(1<<PORTA5);
+	PORTA = (1<<PORTA2)|(1<<PORTA3);
 	PORTB = (1<<PORTB2);
 
 	// deactivate timer0, timer1 and USI peripherals for saving power
@@ -372,6 +372,11 @@ void Calibration(void) {
 	eeprom_update_block(transformMats,
 						eeprom_transformMats,
 						sizeof(transformMats));
+
+	// make buzzer sound
+	PORTA |= (1<<PORTA5);
+	_delay_ms(200);
+	PORTA &= ~(1<<PORTA5);
 }
 
 /* Return the octant (like "quadrant" but for eight) of the stick that `point` is in */
